@@ -12,6 +12,7 @@ import android.content.Context;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 
+import android.content.res.Resources;
 import android.graphics.SurfaceTexture;
 import android.hardware.camera2.CameraAccessException;
 import android.hardware.camera2.CameraCaptureSession;
@@ -47,11 +48,11 @@ import java.nio.ByteBuffer;
 import java.util.Arrays;
 
 
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends AppCompatActivity  {
 
 
     public static final String LOG_TAG = "myLogs";
-    public static Surface surface = null;
+    public static Surface surface1 = null;
     public static Surface surface2 = null;
 
     CameraService[] myCameras = null;
@@ -60,13 +61,13 @@ public class MainActivity extends AppCompatActivity {
     private final int CAMERA1 = 0;
 
 
-    private Button mButtonOpenCamera1 = null;
-
-    private Button mButtonTStopStreamVideo = null;
+    private Button mOn = null;
+    private Button mOff = null;
     public static TextureView mImageViewUp = null;
     public static TextureView mImageViewDown = null;
     private HandlerThread mBackgroundThread;
     private Handler mBackgroundHandler = null;
+
 
     private MediaCodec mCodec = null; // кодер
     Surface mEncoderSurface; // Surface как вход данных для кодера
@@ -125,18 +126,18 @@ public class MainActivity extends AppCompatActivity {
         }
 
 
-        mButtonOpenCamera1 = findViewById(R.id.button1);
+        mOn = findViewById(R.id.button1);
 
-        mButtonTStopStreamVideo = findViewById(R.id.button3);
+        mOff = findViewById(R.id.button3);
         mImageViewUp = findViewById(R.id.textureView);
         mImageViewDown = findViewById(R.id.textureView3);
 
-        mButtonOpenCamera1.setOnClickListener(new View.OnClickListener() {
+        mOn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
 
 
-                setUpMediaCodec();// инициализируем Медиа Кодек
+
 
                 if (myCameras[CAMERA1] != null) {// открываем камеру
                     if (!myCameras[CAMERA1].isOpen()) myCameras[CAMERA1].openCamera();
@@ -149,7 +150,7 @@ public class MainActivity extends AppCompatActivity {
 
 
 
-        mButtonTStopStreamVideo.setOnClickListener(new View.OnClickListener() {
+        mOff.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
 
@@ -251,25 +252,26 @@ public class MainActivity extends AppCompatActivity {
 
         private void startCameraPreviewSession() {
             SurfaceTexture texture = mImageViewUp.getSurfaceTexture();
-            //   texture.setDefaultBufferSize(320, 240);
-            surface = new Surface(texture);
+            texture.setDefaultBufferSize(640, 480);
+            surface1 = new Surface(texture);
 
 
             SurfaceTexture texture2 = mImageViewDown.getSurfaceTexture();
-            surface2 = new Surface(texture2);
 
+            surface2 = new Surface(texture2);
+            texture2.setDefaultBufferSize(640, 480);
             try {
 
                 mPreviewBuilder = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
 
-                mPreviewBuilder.addTarget(surface);
+                mPreviewBuilder.addTarget(surface1);
                 mPreviewBuilder.addTarget(surface2);
-                mPreviewBuilder.addTarget(mEncoderSurface);
 
 
 
 
-                mCameraDevice.createCaptureSession(Arrays.asList(surface,surface2, mEncoderSurface),
+
+                mCameraDevice.createCaptureSession(Arrays.asList(surface1,surface2),
 
                         new CameraCaptureSession.StateCallback() {
 
