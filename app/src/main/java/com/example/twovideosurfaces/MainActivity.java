@@ -252,17 +252,17 @@ public class MainActivity extends AppCompatActivity  {
 
         private void startCameraPreviewSession() {
             SurfaceTexture texture = mImageViewUp.getSurfaceTexture();
-            texture.setDefaultBufferSize(640, 480);
+            texture.setDefaultBufferSize(1280, 1024);
             surface1 = new Surface(texture);
 
 
             SurfaceTexture texture2 = mImageViewDown.getSurfaceTexture();
 
             surface2 = new Surface(texture2);
-            texture2.setDefaultBufferSize(640, 480);
+            texture2.setDefaultBufferSize(1280, 1024);
             try {
 
-                mPreviewBuilder = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
+                mPreviewBuilder = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_RECORD);
 
                 mPreviewBuilder.addTarget(surface1);
                 mPreviewBuilder.addTarget(surface2);
@@ -278,6 +278,27 @@ public class MainActivity extends AppCompatActivity  {
                             @Override
                             public void onConfigured(CameraCaptureSession session) {
                                 mSession = session;
+
+                                try {
+
+                                    mPreviewBuilder.set(CaptureRequest.CONTROL_SCENE_MODE,
+                                            CaptureRequest.CONTROL_SCENE_MODE_NIGHT);
+                                 //   mPreviewBuilder.set(CaptureRequest.CONTROL_AWB_MODE,
+                                   //        CaptureRequest.CONTROL_AWB_MODE_TWILIGHT);
+                                    mPreviewBuilder.set(CaptureRequest.CONTROL_AE_MODE,
+                                           CaptureRequest.CONTROL_AE_MODE_OFF);
+
+                                    mPreviewBuilder.set(CaptureRequest.SENSOR_EXPOSURE_TIME,Long.valueOf("100000000"));
+                                    mPreviewBuilder.set(CaptureRequest.SENSOR_SENSITIVITY, 30000);
+
+
+
+
+
+                                } catch (Exception e) {
+                                    e.printStackTrace();
+                                }
+
 
                                 try {
                                     mSession.setRepeatingRequest(mPreviewBuilder.build(), null, mBackgroundHandler);
