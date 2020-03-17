@@ -69,14 +69,10 @@ public class MainActivity extends AppCompatActivity  {
     private Handler mBackgroundHandler = null;
 
 
-    private MediaCodec mCodec = null; // кодер
-    Surface mEncoderSurface; // Surface как вход данных для кодера
 
-    ByteBuffer outPutByteBuffer;
-    DatagramSocket udpSocket;
-    String ip_address = "192.168.1.85";
-    InetAddress address;
-    int port = 40002;
+
+
+
 
 
     private void startBackgroundThread() {
@@ -155,34 +151,14 @@ public class MainActivity extends AppCompatActivity  {
             public void onClick(View v) {
 
 
-                if (mCodec != null) {
 
-                    Toast.makeText(MainActivity.this, " остановили стрим", Toast.LENGTH_SHORT).show();
-                    myCameras[CAMERA1].stopStreamingVideo();
-                }
 
 
             }
         });
 
 
-        try {
-            udpSocket = new DatagramSocket();
 
-            Log.i(LOG_TAG, "  создали udp сокет");
-
-        } catch (
-                SocketException e) {
-            Log.i(LOG_TAG, " не создали udp сокет");
-        }
-
-        try {
-            address = InetAddress.getByName(ip_address);
-            Log.i(LOG_TAG, "  есть адрес");
-        } catch (Exception e) {
-
-
-        }
 
 
 
@@ -350,138 +326,11 @@ public class MainActivity extends AppCompatActivity  {
             }
         }
 
-        public void stopStreamingVideo() {
-
-            if (mCameraDevice != null & mCodec != null) {
-
-                try {
-                    mSession.stopRepeating();
-                    mSession.abortCaptures();
-                } catch (CameraAccessException e) {
-                    e.printStackTrace();
-                }
-
-                mCodec.stop();
-                mCodec.release();
-                mEncoderSurface.release();
-                closeCamera();
-            }
-        }
-    }
-
-
-    private void setUpMediaCodec() {
-
-
-
-
-        try {
-            mCodec = MediaCodec.createEncoderByType("video/avc"); // H264 кодек
-
-        } catch (Exception e) {
-            Log.i(LOG_TAG, "а нету кодека");
-        }
-
-        int width = 320; // ширина видео
-        int height = 240; // высота видео
-        int colorFormat = MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface; // формат ввода цвета
-        int videoBitrate = 500000; // битрейт видео в bps (бит в секунду)
-        int videoFramePerSecond = 15; // FPS
-        int iframeInterval = 1; // I-Frame интервал в секундах
-
-        MediaFormat format = MediaFormat.createVideoFormat("video/avc", width, height);
-        format.setInteger(MediaFormat.KEY_COLOR_FORMAT, colorFormat);
-        format.setInteger(MediaFormat.KEY_BIT_RATE, videoBitrate);
-        format.setInteger(MediaFormat.KEY_FRAME_RATE, videoFramePerSecond);
-        format.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, iframeInterval);
-
-
-        mCodec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE); // конфигурируем кодек как кодер
-        mEncoderSurface = mCodec.createInputSurface(); // получаем Surface кодера
-
-        mCodec.setCallback(new EncoderCallback());
-        mCodec.start(); // запускаем кодер
-        Log.i(LOG_TAG, "запустили кодек");
 
     }
 
-    private class EncoderCallback extends MediaCodec.Callback {
-
-        @Override
-        public void onInputBufferAvailable(MediaCodec codec, int index) {
-
-        }
-
-        @Override
-        public void onOutputBufferAvailable(MediaCodec codec, int index, MediaCodec.BufferInfo info) {
 
 
-            outPutByteBuffer = mCodec.getOutputBuffer(index);
-            byte[] outDate = new byte[info.size];
-            outPutByteBuffer.get(outDate);
-
-            int count =0;
-
-            int temp =outDate.length ;
-
-            do {
-
-                byte[] ds;
-
-                temp = temp-1024;
-
-                if(temp>=0)
-                { ds = new byte[1024];}
-                else
-                { ds = new byte[temp+1024];}
-
-
-                for(int i =0;i<ds.length;i++)
-                {
-                    ds[i]=outDate[i+1024*count];
-
-                }
-
-                count=count+1;
-
-
-                try {
-                    Log.i(LOG_TAG, " outDate.length : " + ds.length);
-                    DatagramPacket packet = new DatagramPacket(ds, ds.length, address, port);
-                    udpSocket.send(packet);
-                } catch (IOException e) {
-                    Log.i(LOG_TAG, " не отправился UDP пакет");
-                }
-
-
-
-            }
-            while (temp>=0);
-
-/*
-            try {
-                DatagramPacket packet = new DatagramPacket(outDate, outDate.length, address, port);
-                udpSocket.send(packet);
-            } catch (IOException e) {
-                Log.i(LOG_TAG, " не отправился UDP пакет");
-            }
-*/
-
-            mCodec.releaseOutputBuffer(index, false);
-
-
-        }
-
-        @Override
-        public void onError(MediaCodec codec, MediaCodec.CodecException e) {
-            Log.i(LOG_TAG, "Error: " + e);
-        }
-
-        @Override
-        public void onOutputFormatChanged(MediaCodec codec, MediaFormat format) {
-            Log.i(LOG_TAG, "encoder output format changed: " + format);
-        }
-    }
 
     @Override
     public void onPause() {
