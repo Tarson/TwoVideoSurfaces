@@ -12,7 +12,6 @@ import android.content.Context;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 
-import android.content.res.Resources;
 import android.graphics.SurfaceTexture;
 import android.hardware.camera2.CameraAccessException;
 import android.hardware.camera2.CameraCaptureSession;
@@ -39,6 +38,7 @@ import android.widget.Button;
 import android.widget.Toast;
 
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
@@ -52,8 +52,7 @@ public class MainActivity extends AppCompatActivity  {
 
 
     public static final String LOG_TAG = "myLogs";
-    public static Surface surface1 = null;
-    public static Surface surface2 = null;
+
 
     CameraService[] myCameras = null;
 
@@ -69,10 +68,34 @@ public class MainActivity extends AppCompatActivity  {
     private Handler mBackgroundHandler = null;
 
 
+    private MediaCodec encoder = null; // кодер
+    private MediaCodec decoder = null;
+    private MediaCodec decoder2 = null;
+    byte [] b;
+    byte [] b2;
+    Surface mEncoderSurface; // Surface как вход данных для кодера
+    Surface mDecoderSurface; // Surface как прием данных от кодера
+    Surface mDecoderSurface2; // Surface как прием данных от кодера
+    ByteBuffer outPutByteBuffer;
+
+    ByteBuffer decoderInputBuffer;
+    ByteBuffer decoderOutputBuffer;
+    ByteBuffer decoderInputBuffer2;
+    ByteBuffer decoderOutputBuffer2;
 
 
+    byte outDataForEncoder [];
+    static  boolean  mNewFrame=false;
 
+    DatagramSocket udpSocket;
 
+    DatagramSocket udpSocketIn;
+    String ip_address = "192.168.50.131";//192.168.50.131
+    InetAddress address;
+    int port = 40002;
+
+    ByteArrayOutputStream out =new ByteArrayOutputStream(50000);
+    ByteArrayOutputStream out2 = new ByteArrayOutputStream(50000);
 
 
     private void startBackgroundThread() {
@@ -125,6 +148,7 @@ public class MainActivity extends AppCompatActivity  {
         mOn = findViewById(R.id.button1);
 
         mOff = findViewById(R.id.button3);
+
         mImageViewUp = findViewById(R.id.textureView);
         mImageViewDown = findViewById(R.id.textureView3);
 
@@ -133,7 +157,7 @@ public class MainActivity extends AppCompatActivity  {
             public void onClick(View v) {
 
 
-
+                setUpMediaCodec();// инициализируем Медиа Кодек
 
                 if (myCameras[CAMERA1] != null) {// открываем камеру
                     if (!myCameras[CAMERA1].isOpen()) myCameras[CAMERA1].openCamera();
@@ -150,13 +174,47 @@ public class MainActivity extends AppCompatActivity  {
             @Override
             public void onClick(View v) {
 
+                if (encoder != null) {
 
+                    Toast.makeText(MainActivity.this, " остановили стрим", Toast.LENGTH_SHORT).show();
+                    myCameras[CAMERA1].stopStreamingVideo();
+                }
 
 
 
             }
         });
 
+
+
+        try {
+            udpSocket = new DatagramSocket();
+            udpSocketIn = new DatagramSocket(port);// we changed it to DatagramChannell becouse UDP packets may be different in size
+            try {
+
+            }
+
+            catch (Exception e){
+                Log.i(LOG_TAG, "  создали udp канал");
+            }
+
+
+            new Udp_recipient();
+
+            Log.i(LOG_TAG, "  создали udp сокет");
+
+        } catch (
+                SocketException e) {
+            Log.i(LOG_TAG, " не создали udp сокет");
+        }
+
+        try {
+            address = InetAddress.getByName(ip_address);
+            Log.i(LOG_TAG, "  есть адрес");
+        } catch (Exception e) {
+
+
+        }
 
 
 
@@ -227,27 +285,25 @@ public class MainActivity extends AppCompatActivity  {
         };
 
         private void startCameraPreviewSession() {
-            SurfaceTexture texture = mImageViewUp.getSurfaceTexture();
-            texture.setDefaultBufferSize(1280, 1024);
-            surface1 = new Surface(texture);
 
 
-            SurfaceTexture texture2 = mImageViewDown.getSurfaceTexture();
 
-            surface2 = new Surface(texture2);
-            texture2.setDefaultBufferSize(1280, 1024);
+
+
             try {
 
                 mPreviewBuilder = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_RECORD);
 
-                mPreviewBuilder.addTarget(surface1);
-                mPreviewBuilder.addTarget(surface2);
+              //  mPreviewBuilder.addTarget(surface1);
+
+                mPreviewBuilder.addTarget(mEncoderSurface);
+               // mPreviewBuilder.addTarget(mDecoderSurface2);
+           //
 
 
 
 
-
-                mCameraDevice.createCaptureSession(Arrays.asList(surface1,surface2),
+                mCameraDevice.createCaptureSession(Arrays.asList(mEncoderSurface),
 
                         new CameraCaptureSession.StateCallback() {
 
@@ -257,15 +313,15 @@ public class MainActivity extends AppCompatActivity  {
 
                                 try {
 
-                                    mPreviewBuilder.set(CaptureRequest.CONTROL_SCENE_MODE,
-                                            CaptureRequest.CONTROL_SCENE_MODE_NIGHT);
+                              //      mPreviewBuilder.set(CaptureRequest.CONTROL_SCENE_MODE,
+                                //            CaptureRequest.CONTROL_SCENE_MODE_NIGHT);
                                  //   mPreviewBuilder.set(CaptureRequest.CONTROL_AWB_MODE,
                                    //        CaptureRequest.CONTROL_AWB_MODE_TWILIGHT);
-                                    mPreviewBuilder.set(CaptureRequest.CONTROL_AE_MODE,
-                                           CaptureRequest.CONTROL_AE_MODE_OFF);
+                                //    mPreviewBuilder.set(CaptureRequest.CONTROL_AE_MODE,
+                                 //          CaptureRequest.CONTROL_AE_MODE_OFF);
 
-                                    mPreviewBuilder.set(CaptureRequest.SENSOR_EXPOSURE_TIME,Long.valueOf("100000000"));
-                                    mPreviewBuilder.set(CaptureRequest.SENSOR_SENSITIVITY, 30000);
+                                 //   mPreviewBuilder.set(CaptureRequest.SENSOR_EXPOSURE_TIME,Long.valueOf("100000000"));
+                                 //   mPreviewBuilder.set(CaptureRequest.SENSOR_SENSITIVITY, 30000);
 
 
 
@@ -327,11 +383,411 @@ public class MainActivity extends AppCompatActivity  {
         }
 
 
+        public void stopStreamingVideo() {
+
+            if (mCameraDevice != null & encoder != null) {
+
+                try {
+                    mSession.stopRepeating();
+                    mSession.abortCaptures();
+                } catch (CameraAccessException e) {
+                    e.printStackTrace();
+                }
+
+                encoder.stop();
+                encoder.release();
+                mEncoderSurface.release();
+                decoder.stop();
+                decoder.release();
+                decoder2.stop();
+                decoder2.release();
+
+                closeCamera();
+            }
+        }
+
+
+
+    }
+
+    private void setUpMediaCodec() {
+
+
+
+
+        try {
+            encoder = MediaCodec.createEncoderByType("video/avc"); // H264 кодек
+
+        } catch (Exception e) {
+            Log.i(LOG_TAG, "а нету кодека");
+        }
+        {
+            int width = 640; // ширина видео
+            int height = 480; // высота видео
+            int colorFormat = MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface; // формат ввода цвета
+            int videoBitrate = 2000000; // битрейт видео в bps (бит в секунду)
+            int videoFramePerSecond = 30; // FPS
+            int iframeInterval = 1; // I-Frame интервал в секундах
+
+            MediaFormat format = MediaFormat.createVideoFormat("video/avc", width, height);
+            format.setInteger(MediaFormat.KEY_COLOR_FORMAT, colorFormat);
+            format.setInteger(MediaFormat.KEY_BIT_RATE, videoBitrate);
+            format.setInteger(MediaFormat.KEY_FRAME_RATE, videoFramePerSecond);
+            format.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, iframeInterval);
+
+
+            encoder.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE); // конфигурируем кодек как кодер
+           mEncoderSurface = encoder.createInputSurface(); // получаем Surface кодера
+        }
+        encoder.setCallback(new EncoderCallback());
+        encoder.start(); // запускаем кодер
+        Log.i(LOG_TAG, "запустили кодек");
+
+
+
+        try {
+
+            decoder = MediaCodec.createDecoderByType("video/avc");// H264 декодек
+
+        } catch (Exception e) {
+            Log.i(LOG_TAG, "а нету декодека");
+        }
+
+        int width = 480; // ширина видео
+        int height = 640; // высота видео
+
+
+        MediaFormat format = MediaFormat.createVideoFormat("video/avc", width, height);
+
+        format.setInteger(MediaFormat.KEY_ROTATION,90);
+
+
+
+        SurfaceTexture texture= mImageViewUp.getSurfaceTexture();
+        mDecoderSurface = new Surface(texture);
+
+        decoder.configure(format, mDecoderSurface, null,0);
+
+        decoder.setOutputSurface(mDecoderSurface);
+
+        decoder.setCallback(new DecoderCallback());
+        decoder.start();
+        Log.i(LOG_TAG, "запустили декодер");
+
+
+        try {
+
+            decoder2 = MediaCodec.createDecoderByType("video/avc");// H264 декодек
+
+        } catch (Exception e) {
+            Log.i(LOG_TAG, "а нету декодека");
+        }
+
+        int width2 = 480; // ширина видео
+        int height2 = 640; // высота видео
+
+
+        MediaFormat format2 = MediaFormat.createVideoFormat("video/avc", width2, height2);
+
+        format2.setInteger(MediaFormat.KEY_ROTATION,90);
+
+
+
+        SurfaceTexture texture2= mImageViewDown.getSurfaceTexture();
+        mDecoderSurface2 = new Surface(texture2);
+
+        decoder2.configure(format2, mDecoderSurface2, null,0);
+
+
+
+        decoder2.setOutputSurface(mDecoderSurface2);
+
+        decoder2.setCallback(new DecoderCallback2());
+        decoder2.start();
+        Log.i(LOG_TAG, "запустили декодер");
+
+
+
+
+
     }
 
 
+    private class DecoderCallback2 extends MediaCodec.Callback {
+
+        @Override
+        public void onInputBufferAvailable(MediaCodec codec, int index) {
 
 
+
+
+
+            decoderInputBuffer2 = codec.getInputBuffer(index);
+            decoderInputBuffer2.clear();
+
+
+
+
+            synchronized (out2)
+            {
+                b2 =  out2.toByteArray();
+                out2.reset();
+
+            }
+
+/*
+                             if(mNewFrame)
+                             {
+                               synchronized (outDataForEncoder)
+                               { b=outDataForEncoder;  }
+
+                             }
+
+                             if(!mNewFrame)   {  b=new byte[0]; }
+*/
+            decoderInputBuffer2.put(b2);
+
+
+
+            codec.queueInputBuffer(index, 0, b2.length, 400, 0);
+            if (b2.length!=0)
+            {
+                //   Log.i(LOG_TAG, b.length + " декодер вход  "+index );
+            }
+
+
+
+            //     if(mNewFrame)
+
+            //    { new Udp_recipient();}
+
+
+
+
+
+
+        }
+
+        @Override
+        public void onOutputBufferAvailable(MediaCodec codec, int index, MediaCodec.BufferInfo info) {
+
+
+            {
+
+                {
+                    decoderOutputBuffer2 = codec.getOutputBuffer(index);
+
+
+
+                    codec.releaseOutputBuffer(index, true);
+
+
+                }
+
+
+
+
+
+
+
+            }
+        }
+
+        @Override
+        public void onError(MediaCodec codec, MediaCodec.CodecException e) {
+            Log.i(LOG_TAG, "Error: " + e);
+        }
+
+        @Override
+        public void onOutputFormatChanged(MediaCodec codec, MediaFormat format) {
+            Log.i(LOG_TAG, "decoder output format changed: " + format);
+        }
+    }
+    //CALLBACK FOR DECODER
+    private class DecoderCallback extends MediaCodec.Callback {
+
+        @Override
+        public void onInputBufferAvailable(MediaCodec codec, int index) {
+
+
+
+
+
+            decoderInputBuffer = codec.getInputBuffer(index);
+            decoderInputBuffer.clear();
+
+
+
+
+            synchronized (out)
+            {
+                b =  out.toByteArray();
+                out.reset();
+
+
+
+
+
+            }
+
+/*
+                             if(mNewFrame)
+                             {
+                               synchronized (outDataForEncoder)
+                               { b=outDataForEncoder;  }
+
+                             }
+
+                             if(!mNewFrame)   {  b=new byte[0]; }
+*/
+            decoderInputBuffer.put(b);
+
+
+
+            codec.queueInputBuffer(index, 0, b.length, 400, 0);
+                 if (b.length!=0)
+            {
+               //  Log.i(LOG_TAG, b.length + " декодер вход  "+index );
+            }
+
+
+
+            //     if(mNewFrame)
+
+            //    { new Udp_recipient();}
+
+
+
+
+
+
+        }
+
+        @Override
+        public void onOutputBufferAvailable(MediaCodec codec, int index, MediaCodec.BufferInfo info) {
+
+
+            {
+
+                {
+                    decoderOutputBuffer = codec.getOutputBuffer(index);
+
+
+
+                    codec.releaseOutputBuffer(index, true);
+
+
+                }
+
+
+
+
+
+
+
+            }
+        }
+
+        @Override
+        public void onError(MediaCodec codec, MediaCodec.CodecException e) {
+            Log.i(LOG_TAG, "Error: " + e);
+        }
+
+        @Override
+        public void onOutputFormatChanged(MediaCodec codec, MediaFormat format) {
+            Log.i(LOG_TAG, "decoder output format changed: " + format);
+        }
+    }
+
+
+    private class EncoderCallback extends MediaCodec.Callback {
+
+        @Override
+        public void onInputBufferAvailable(MediaCodec codec, int index) {
+            Log.i(LOG_TAG, " входные буфера готовы" );
+            //
+
+
+
+        }
+
+        @Override
+        public void onOutputBufferAvailable(MediaCodec codec, int index, MediaCodec.BufferInfo info) {
+
+
+            outPutByteBuffer = encoder.getOutputBuffer(index);
+
+
+
+            byte[] outDate = new byte[info.size];
+            outPutByteBuffer.get(outDate);
+
+
+            try {
+                //  Log.i(LOG_TAG, " outDate.length : " + outDate.length);
+                DatagramPacket packet = new DatagramPacket(outDate, outDate.length, address, port);
+                udpSocket.send(packet);
+            } catch (IOException e) {
+                Log.i(LOG_TAG, " не отправился UDP пакет");
+            }
+
+
+/*
+           int count =0;
+
+            int temp =outDate.length ;
+
+            do {
+
+                byte[] ds;
+
+                temp = temp-1024;
+
+                if(temp>=0)
+                { ds = new byte[1024];}
+                else
+                { ds = new byte[temp+1024];}
+
+
+                for(int i =0;i<ds.length;i++)
+                {
+                    ds[i]=outDate[i+1024*count];
+
+                }
+
+                count=count+1;
+
+
+                try {
+                    Log.i(LOG_TAG, " outDate.length : " + ds.length);
+                    DatagramPacket packet = new DatagramPacket(ds, ds.length, address, port);
+                    udpSocket.send(packet);
+                } catch (IOException e) {
+                    Log.i(LOG_TAG, " не отправился UDP пакет");
+                }
+
+
+
+            }
+          while (temp>=0);
+
+ */
+
+            encoder.releaseOutputBuffer(index, false);
+
+
+        }
+
+        @Override
+        public void onError(MediaCodec codec, MediaCodec.CodecException e) {
+            Log.i(LOG_TAG, "Error: " + e);
+        }
+
+        @Override
+        public void onOutputFormatChanged(MediaCodec codec, MediaFormat format) {
+            //  Log.i(LOG_TAG, "encoder output format changed: " + format);
+        }
+    }
     @Override
     public void onPause() {
         if (myCameras[CAMERA1].isOpen()) {
@@ -347,5 +803,123 @@ public class MainActivity extends AppCompatActivity  {
         super.onResume();
         startBackgroundThread();
     }
+
+
+
+
+    public class Udp_recipient extends Thread {
+
+
+
+
+        Udp_recipient() {
+
+
+
+
+            start();
+            mNewFrame = false;
+            //    Log.i(LOG_TAG, "запустили прием данных по udp");
+
+        }
+
+
+        public void run() {
+
+
+
+            while (true) {
+                try {
+
+
+                    byte buffer[] = new byte[32768];
+
+
+
+
+
+
+
+                    DatagramPacket p = new DatagramPacket(buffer, buffer.length);
+                    udpSocketIn.receive(p);
+                    byte bBuffer[] = p.getData();
+
+
+
+                    outDataForEncoder = new byte[p.getLength()];
+
+                    synchronized (outDataForEncoder) {
+
+
+                        for (int i = 0; i < outDataForEncoder.length; i++) {
+                            outDataForEncoder[i] = bBuffer[i];
+
+                        }
+
+                    }
+
+                    mNewFrame = true;
+
+                    synchronized (out)
+                    {out.write(outDataForEncoder);}
+
+                    synchronized (out2)
+                    {out2.write(outDataForEncoder);}
+
+
+
+
+
+                    //     Log.i(LOG_TAG,outDataForEncoder.length + " выход" );
+
+
+           /*
+                        SocketAddress client = channel.receive(buffer);
+                        buffer.flip();
+                        ArrayList <Byte> ab = new ArrayList <>();
+
+
+                        //Log.i(LOG_TAG,client + " says " );
+
+
+
+                        while (buffer.hasRemaining())
+                        {
+
+                            byte b =buffer.get();
+                            ab.add(b);
+
+
+                        }
+
+                        outDataForEncoder = new byte[ab.size()];
+                        for(int i=0; i<ab.size();i++)// so not to put primitives
+                        {
+                            outDataForEncoder [i]=ab.get(i);
+                         //   Log.i(LOG_TAG,outDataForEncoder [i] + " " );
+                        }
+
+                        Log.i(LOG_TAG,ab.size() + " " );
+
+
+
+                        buffer.clear();
+
+
+*/
+
+
+                } catch (Exception e) {
+                    Log.i(LOG_TAG, e + "hggh ");
+                }
+
+
+            }
+        }
+
+    }
+
+
+
 }
 
